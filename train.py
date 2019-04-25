@@ -1,7 +1,10 @@
 import argparse
 import datetime
 from pathlib import Path
+from typing import Optional
 
+import imgaug as ia
+import imgaug.augmenters as iaa
 import numpy as np
 import pandas as pd
 import torch
@@ -11,13 +14,12 @@ from PIL import Image
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from skorch import NeuralNet
-from skorch.callbacks import Checkpoint, EpochScoring, ProgressBar
+from skorch.callbacks import BatchScoring, Checkpoint, EpochScoring, ProgressBar
 from skorch.helper import predefined_split
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose, RandomCrop, Resize, ToPILImage, ToTensor
 
-from callbacks import Tensorboard
-from dataset import UsgDataset
+from dataset import UsgDataset, Denoising, ImgaugWrapper, ToBGR
 from model import PretrainedModel
 
 # Needed it because of in `DataLoader` for validation set
@@ -30,18 +32,26 @@ def acc_as_metric(y_pred: np.ndarray, y_true: np.ndarray) -> float:
     return (np.argmax(y_pred, axis=1) == y_true).mean().item()
 
 
-def acc(net: NeuralNet, ds: Dataset, y: torch.Tensor) -> float:
-    predict_values = net.predict(ds)
-    return acc_as_metric(predict_values, y)
+def acc(net: NeuralNet,
+        ds: Optional[Dataset] = None,
+        y: Optional[torch.Tensor] = None,
+        y_pred: Optional[torch.Tensor] = None) -> float:
+    if y_pred is None:
+        y_pred = net.predict(ds)
+    return acc_as_metric(y_pred, y)
 
 
 def fscore_as_metric(y_pred: np.ndarray, y_true: np.ndarray) -> float:
     return f1_score(y_true, np.argmax(y_pred, axis=1), average="weighted")
 
 
-def fscore(net: NeuralNet, ds: Dataset, y: torch.Tensor) -> float:
-    predict_values = net.predict(ds)
-    return fscore_as_metric(predict_values, y)
+def fscore(net: NeuralNet,
+           ds: Optional[Dataset] = None,
+           y: Optional[torch.Tensor] = None,
+           y_pred: Optional[torch.Tensor] = None) -> float:
+    if y_pred is None:
+        y_pred = net.predict(ds)
+    return fscore_as_metric(y_pred, y)
 
 
 def get_timestamp() -> str:
@@ -57,7 +67,20 @@ def train(data_folder: str, out_model: str):
     classes = [int(path.parent.parent.name) for path in data_paths]
     train_paths, valid_paths = train_test_split(data_paths, test_size=0.3, stratify=classes)
 
+    train_augmenters = iaa.Sequential([
+        iaa.Fliplr(p=0.2),
+        iaa.Flipud(p=0.2),
+        iaa.Affine(
+            rotate=(-5, 5),
+            translate_px=(-5, 5),
+            mode=ia.ALL
+        )
+    ], random_order=True)
+
     transforms = Compose([
+        Denoising(denoising_scale=7),
+        ImgaugWrapper(train_augmenters),
+        ToBGR(),
         ToPILImage(),
         RandomCrop(128, pad_if_needed=True),
         Resize(128, interpolation=Image.LANCZOS),
@@ -86,17 +109,11 @@ def train(data_folder: str, out_model: str):
                 f_optimizer=(out_model / "optim.pt").as_posix(),
                 f_history=(out_model / "history.pt").as_posix()
             ),
-            ProgressBar(postfix_keys=["train_loss", "train_acc"]),
             EpochScoring(acc, name="val_acc", lower_is_better=False, on_train=False),
-            EpochScoring(acc, name="train_acc", lower_is_better=False, on_train=True),
-            Tensorboard((out_model / "train").as_posix(), metrics={
-                "acc": acc_as_metric,
-                "fscore": fscore_as_metric,
-            }, is_training=True),
-            Tensorboard((out_model / "valid").as_posix(), metrics={
-                "acc": acc_as_metric,
-                "fscore": fscore_as_metric
-            }, is_training=False),
+            EpochScoring(fscore, name="val_fscore", lower_is_better=False, on_train=False),
+            BatchScoring(acc, name="train_acc", lower_is_better=False, on_train=True),
+            BatchScoring(fscore, name="train_fscore", lower_is_better=False, on_train=True),
+            ProgressBar(postfix_keys=["train_loss", "train_fscore"]),
         ],
         warm_start=True
     )
@@ -115,9 +132,13 @@ def train(data_folder: str, out_model: str):
     net.load_params(f_params=(out_model / "params.pt").as_posix())
 
     test_data_paths = list((Path(data_folder) / "test").rglob("radial_polar_area.png"))
-    test_dataset = UsgDataset(test_data_paths, is_train_or_valid=False, transforms=Compose([
-        ToTensor()
-    ]))
+    test_dataset = UsgDataset(
+        test_data_paths, is_train_or_valid=False,
+        transforms=Compose([
+            Denoising(denoising_scale=7),
+            ToBGR(),
+            ToTensor()
+        ]))
 
     valid_predictions = net.predict(valid_dataset)
     valid_trues = np.asarray([int(path.parent.parent.name) for path in valid_paths])
