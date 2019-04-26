@@ -14,12 +14,12 @@ from PIL import Image
 from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from skorch import NeuralNet
-from skorch.callbacks import BatchScoring, Checkpoint, EpochScoring, ProgressBar
+from skorch.callbacks import BatchScoring, Checkpoint, EpochScoring, LRScheduler, ProgressBar
 from skorch.helper import predefined_split
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose, RandomCrop, Resize, ToPILImage, ToTensor
 
-from dataset import UsgDataset, Denoising, ImgaugWrapper, ToBGR
+from dataset import Denoising, ToBGR, UsgDataset
 from model import PretrainedModel
 
 # Needed it because of in `DataLoader` for validation set
@@ -79,7 +79,7 @@ def train(data_folder: str, out_model: str):
 
     transforms = Compose([
         Denoising(denoising_scale=7),
-        ImgaugWrapper(train_augmenters),
+        # ImgaugWrapper(train_augmenters),
         ToBGR(),
         ToPILImage(),
         RandomCrop(128, pad_if_needed=True),
@@ -96,7 +96,7 @@ def train(data_folder: str, out_model: str):
         batch_size=18,
         max_epochs=100,
         optimizer=optim.Adam,
-        lr=0.001,
+        lr=0.0001,
         iterator_train__shuffle=True,
         iterator_train__num_workers=2,
         iterator_valid__shuffle=False,
@@ -108,6 +108,12 @@ def train(data_folder: str, out_model: str):
                 f_params=(out_model / "params.pt").as_posix(),
                 f_optimizer=(out_model / "optim.pt").as_posix(),
                 f_history=(out_model / "history.pt").as_posix()
+            ),
+            LRScheduler(
+                policy="ReduceLROnPlateau",
+                monitor="valid_loss",
+                factor=0.25,
+                patience=7,
             ),
             EpochScoring(acc, name="val_acc", lower_is_better=False, on_train=False),
             EpochScoring(fscore, name="val_fscore", lower_is_better=False, on_train=False),
@@ -148,8 +154,9 @@ def train(data_folder: str, out_model: str):
 
     ids = [path.parent.name for path in test_data_paths]
     classes = np.argmax(predictions, axis=1)
-    frame = pd.DataFrame(data={"ids": ids, "classes": classes})
-    frame = frame.sort_values(by=["ids"])
+    frame = pd.DataFrame(data={"id": ids, "label": classes})
+    frame["id"] = frame["id"].astype(np.int)
+    frame = frame.sort_values(by=["id"])
     frame.to_csv(f"submissions/{get_timestamp()}_{'%.4f' % val_acc}_submission.csv", index=False)
 
 
