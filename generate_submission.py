@@ -5,14 +5,12 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from PIL import Image
-from sklearn.model_selection import train_test_split
 from skorch import NeuralNet
-from torchvision.transforms import Compose, RandomCrop, Resize, ToPILImage, ToTensor
 
+from common import fscore_as_metric, get_test_transformers, get_timestamp, get_train_test_split_from_paths, \
+    get_train_valid_transformers
 from dataset import UsgDataset
 from model import PretrainedModel
-from train import fscore_as_metric, get_timestamp
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -24,17 +22,10 @@ def generate_submission(data_folder: str, weights_path: str):
     data_paths = list((Path(data_folder) / "train").rglob("radial_polar_area.png"))
 
     classes = [int(path.parent.parent.name) for path in data_paths]
-    train_paths, valid_paths = train_test_split(data_paths, test_size=0.3, stratify=classes, random_state=0)
 
-    transforms = Compose([
-        ToPILImage(),
-        RandomCrop(128, pad_if_needed=True),
-        Resize(128, interpolation=Image.LANCZOS),
-        ToTensor()
-    ])
+    train_paths, valid_paths = get_train_test_split_from_paths(data_paths, classes)
 
-    train_dataset = UsgDataset(train_paths, True, transforms=transforms)
-    valid_dataset = UsgDataset(valid_paths, True, transforms=transforms)
+    valid_dataset = UsgDataset(valid_paths, True, transforms=get_train_valid_transformers())
 
     net = NeuralNet(
         PretrainedModel,
@@ -48,9 +39,7 @@ def generate_submission(data_folder: str, weights_path: str):
     net.load_params(f_params=weights_path.as_posix())
 
     test_data_paths = list((Path(data_folder) / "test").rglob("radial_polar_area.png"))
-    test_dataset = UsgDataset(test_data_paths, is_train_or_valid=False, transforms=Compose([
-        ToTensor()
-    ]))
+    test_dataset = UsgDataset(test_data_paths, is_train_or_valid=False, transforms=get_test_transformers())
 
     valid_predictions = net.predict(valid_dataset)
     valid_trues = np.asarray([int(path.parent.parent.name) for path in valid_paths])
