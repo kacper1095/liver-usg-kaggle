@@ -24,7 +24,7 @@ def generate_submission(data_folder: str, weights_path: str):
     data_paths = list((Path(data_folder) / "train").rglob("radial_polar_area.png"))
 
     classes = [int(path.parent.parent.name) for path in data_paths]
-    train_paths, valid_paths = train_test_split(data_paths, test_size=0.3, stratify=classes)
+    train_paths, valid_paths = train_test_split(data_paths, test_size=0.3, stratify=classes, random_state=0)
 
     transforms = Compose([
         ToPILImage(),
