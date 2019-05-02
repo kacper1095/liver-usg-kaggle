@@ -1,18 +1,19 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import models
+
+from custom_densenet import densenet121
 
 
 class PretrainedModel(nn.Module):
     def __init__(self):
         super().__init__()
-        pretrained_model = models.densenet121(pretrained=True, drop_rate=0.2)
+        pretrained_model = densenet121(pretrained=True, drop_rate=0.1)
         self.extractor = pretrained_model.features
         self.classifier = nn.Linear(pretrained_model.classifier.in_features, 2)
 
     def forward(self, x):
         features = self.extractor(x)
-        out = F.relu(features, inplace=True)
-        out = F.adaptive_avg_pool2d(out, (1, 1)).view(features.size(0), -1)
+        out = F.adaptive_avg_pool2d(features, (1, 1)).view(features.size(0), -1)
+        out = F.dropout(out, p=0.1, training=self.training)
         out = self.classifier(out)
         return out

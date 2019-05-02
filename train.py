@@ -26,6 +26,7 @@ def train(data_folder: str, out_model: str):
     out_model.mkdir()
 
     data_paths = list((Path(data_folder) / "train").rglob("radial_polar_area.png"))
+    data_paths = list(sorted(data_paths, key=lambda x: int(x.parent.name)))
 
     classes = [int(path.parent.parent.name) for path in data_paths]
     train_paths, valid_paths = get_train_test_split_from_paths(data_paths, classes)
@@ -36,7 +37,7 @@ def train(data_folder: str, out_model: str):
     net = NeuralNet(
         PretrainedModel,
         criterion=nn.CrossEntropyLoss,
-        batch_size=18,
+        batch_size=16,
         max_epochs=100,
         optimizer=optim.Adam,
         lr=0.0001,

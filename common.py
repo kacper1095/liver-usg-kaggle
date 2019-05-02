@@ -13,15 +13,13 @@ from skorch.net import NeuralNet
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose, RandomCrop, Resize, ToPILImage, ToTensor
 
-from dataset import Denoising, ToBGR
+from dataset import Denoising, ToBGR, ImgaugWrapper
 
 
 def get_train_valid_transformers():
     train_augmenters = iaa.Sequential([
         iaa.Fliplr(p=0.2),
-        iaa.Flipud(p=0.2),
         iaa.Affine(
-            rotate=(-5, 5),
             translate_px=(-5, 5),
             mode=ia.ALL
         )
@@ -29,7 +27,7 @@ def get_train_valid_transformers():
 
     transforms = Compose([
         Denoising(denoising_scale=7),
-        # ImgaugWrapper(train_augmenters),
+        ImgaugWrapper(train_augmenters),
         ToBGR(),
         ToPILImage(),
         RandomCrop(128, pad_if_needed=True),
