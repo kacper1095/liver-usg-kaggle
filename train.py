@@ -7,10 +7,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from skorch import NeuralNet
-from skorch.callbacks import BatchScoring, Checkpoint, EpochScoring, LRScheduler, ProgressBar
+from skorch.callbacks import BatchScoring, Checkpoint, EpochScoring, ProgressBar
 from skorch.helper import predefined_split
 
-from common import acc, fscore, fscore_as_metric, get_test_transformers, get_timestamp, get_train_test_split_from_paths, \
+from common import acc, fscore, fscore_as_metric, get_test_transformers, get_timestamp, \
+    get_train_test_split_from_paths, \
     get_train_valid_transformers
 from dataset import UsgDataset
 from model import PretrainedModel
@@ -19,6 +20,7 @@ from model import PretrainedModel
 # RuntimeError: received 0 items of ancdata
 # https://github.com/pytorch/pytorch/issues/973#issuecomment-426559250
 torch.multiprocessing.set_sharing_strategy('file_system')
+batch_size = 16
 
 
 def train(data_folder: str, out_model: str):
@@ -31,20 +33,21 @@ def train(data_folder: str, out_model: str):
     classes = [int(path.parent.parent.name) for path in data_paths]
     train_paths, valid_paths = get_train_test_split_from_paths(data_paths, classes)
 
-    train_dataset = UsgDataset(train_paths, True, transforms=get_train_valid_transformers())
-    valid_dataset = UsgDataset(valid_paths, True, transforms=get_train_valid_transformers())
-
+    train_dataset = UsgDataset(train_paths, True,
+                               transforms=get_train_valid_transformers())
+    valid_dataset = UsgDataset(valid_paths, True,
+                               transforms=get_train_valid_transformers())
     net = NeuralNet(
         PretrainedModel,
         criterion=nn.CrossEntropyLoss,
-        batch_size=16,
-        max_epochs=100,
+        batch_size=batch_size,
+        max_epochs=50,
         optimizer=optim.Adam,
         lr=0.0001,
         iterator_train__shuffle=True,
-        iterator_train__num_workers=2,
+        iterator_train__num_workers=4,
         iterator_valid__shuffle=False,
-        iterator_valid__num_workers=2,
+        iterator_valid__num_workers=4,
         train_split=predefined_split(valid_dataset),
         device="cuda",
         callbacks=[
@@ -53,16 +56,11 @@ def train(data_folder: str, out_model: str):
                 f_optimizer=(out_model / "optim.pt").as_posix(),
                 f_history=(out_model / "history.pt").as_posix()
             ),
-            LRScheduler(
-                policy="ReduceLROnPlateau",
-                monitor="valid_loss",
-                factor=0.25,
-                patience=7,
-            ),
             EpochScoring(acc, name="val_acc", lower_is_better=False, on_train=False),
             EpochScoring(fscore, name="val_fscore", lower_is_better=False, on_train=False),
             BatchScoring(acc, name="train_acc", lower_is_better=False, on_train=True),
-            BatchScoring(fscore, name="train_fscore", lower_is_better=False, on_train=True),
+            BatchScoring(fscore, name="train_fscore", lower_is_better=False,
+                         on_train=True),
             ProgressBar(postfix_keys=["train_loss", "train_fscore"]),
         ],
         warm_start=True
@@ -97,7 +95,8 @@ def train(data_folder: str, out_model: str):
     frame = pd.DataFrame(data={"id": ids, "label": classes})
     frame["id"] = frame["id"].astype(np.int)
     frame = frame.sort_values(by=["id"])
-    frame.to_csv(f"submissions/{get_timestamp()}_{'%.4f' % val_acc}_submission.csv", index=False)
+    frame.to_csv(f"submissions/{get_timestamp()}_{'%.4f' % val_acc}_submission.csv",
+                 index=False)
 
 
 def main():

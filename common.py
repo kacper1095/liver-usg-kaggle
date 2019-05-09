@@ -2,7 +2,6 @@ import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-import imgaug as ia
 import imgaug.augmenters as iaa
 import numpy as np
 import torch
@@ -13,15 +12,21 @@ from skorch.net import NeuralNet
 from torch.utils.data import Dataset
 from torchvision.transforms import Compose, RandomCrop, Resize, ToPILImage, ToTensor
 
-from dataset import Denoising, ToBGR, ImgaugWrapper
+from dataset import Denoising, ImgaugWrapper, ToBGR
 
 
 def get_train_valid_transformers():
     train_augmenters = iaa.Sequential([
         iaa.Fliplr(p=0.2),
         iaa.Affine(
-            translate_px=(-5, 5),
-            mode=ia.ALL
+            translate_px=(-10, 10),
+            rotate=(-10, 10),
+            mode=["reflect", "symmetric"]
+        ),
+        iaa.ElasticTransformation(
+            alpha=(0.5, 4.5),
+            sigma=1,
+            mode="wrap"
         )
     ], random_order=True)
 
@@ -75,6 +80,8 @@ def get_timestamp() -> str:
     return datetime.datetime.now().strftime("%HH_%MM_%dd_%mm_%Yy")
 
 
-def get_train_test_split_from_paths(data_paths: List[Path], classes: List[int]) -> Tuple[List[Path], List[Path]]:
-    train_paths, valid_paths = train_test_split(data_paths, test_size=0.3, stratify=classes, random_state=0)
+def get_train_test_split_from_paths(data_paths: List[Path], classes: List[int]) -> Tuple[
+    List[Path], List[Path]]:
+    train_paths, valid_paths = train_test_split(data_paths, test_size=0.3,
+                                                stratify=classes, random_state=0)
     return train_paths, valid_paths
