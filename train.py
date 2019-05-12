@@ -7,8 +7,9 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from skorch import NeuralNet
-from skorch.callbacks import BatchScoring, Checkpoint, EpochScoring, ProgressBar
+from skorch.callbacks import BatchScoring, Checkpoint, EpochScoring, ProgressBar, LRScheduler
 from skorch.helper import predefined_split
+from itertools import chain
 
 from common import acc, fscore, fscore_as_metric, get_test_transformers, get_timestamp, \
     get_train_test_split_from_paths, \
@@ -27,10 +28,15 @@ def train(data_folder: str, out_model: str):
     out_model = Path(out_model)
     out_model.mkdir()
 
-    data_paths = list((Path(data_folder) / "train").rglob("radial_polar_area.png"))
-    data_paths = list(sorted(data_paths, key=lambda x: int(x.parent.name)))
+    data_paths = list(
+        chain(
+            (Path(data_folder) / "train" / "0").glob("*"),
+            (Path(data_folder) / "train" / "1").glob("*")
+        )
+    )
+    data_paths = list(sorted(data_paths, key=lambda x: int(x.name)))
 
-    classes = [int(path.parent.parent.name) for path in data_paths]
+    classes = [int(path.parent.name) for path in data_paths]
     train_paths, valid_paths = get_train_test_split_from_paths(data_paths, classes)
 
     train_dataset = UsgDataset(train_paths, True,
@@ -41,7 +47,7 @@ def train(data_folder: str, out_model: str):
         PretrainedModel,
         criterion=nn.CrossEntropyLoss,
         batch_size=batch_size,
-        max_epochs=50,
+        max_epochs=100,
         optimizer=optim.Adam,
         lr=0.0001,
         iterator_train__shuffle=True,
@@ -62,39 +68,51 @@ def train(data_folder: str, out_model: str):
             BatchScoring(fscore, name="train_fscore", lower_is_better=False,
                          on_train=True),
             ProgressBar(postfix_keys=["train_loss", "train_fscore"]),
+            LRScheduler(
+                policy="ReduceLROnPlateau",
+                monitor="valid_loss",
+                factor=0.1,
+                patience=12,
+            ),
         ],
         warm_start=True
     )
 
     net.fit(train_dataset)
 
+    print("Generating submission ...")
     net = NeuralNet(
         PretrainedModel,
         criterion=nn.CrossEntropyLoss,
         iterator_valid__shuffle=False,
-        iterator_valid__num_workers=2,
+        iterator_valid__num_workers=4,
         iterator_valid__batch_size=1,
         device="cuda",
     )
     net.initialize()
     net.load_params(f_params=(out_model / "params.pt").as_posix())
 
-    test_data_paths = list((Path(data_folder) / "test").rglob("radial_polar_area.png"))
+    test_data_paths = list(
+            (Path(data_folder) / "test").glob("*")
+    )
     test_dataset = UsgDataset(
         test_data_paths, is_train_or_valid=False,
         transforms=get_test_transformers())
 
     valid_predictions = net.predict(valid_dataset)
-    valid_trues = np.asarray([int(path.parent.parent.name) for path in valid_paths])
+    valid_trues = np.asarray([int(path.parent.name) for path in valid_paths])
     val_acc = fscore_as_metric(valid_predictions, valid_trues)
 
     predictions = net.predict(test_dataset)
 
-    ids = [path.parent.name for path in test_data_paths]
+    ids = [path.name for path in test_data_paths]
     classes = np.argmax(predictions, axis=1)
     frame = pd.DataFrame(data={"id": ids, "label": classes})
     frame["id"] = frame["id"].astype(np.int)
     frame = frame.sort_values(by=["id"])
+
+    print("Generating submission ... {:.4f}".format(val_acc))
+
     frame.to_csv(f"submissions/{get_timestamp()}_{'%.4f' % val_acc}_submission.csv",
                  index=False)
 

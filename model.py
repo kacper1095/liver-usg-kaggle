@@ -7,7 +7,7 @@ from custom_densenet import densenet121
 class PretrainedModel(nn.Module):
     def __init__(self):
         super().__init__()
-        pretrained_model = densenet121(pretrained=True, drop_rate=0.1)
+        pretrained_model = densenet121(pretrained=False, drop_rate=0.1).train()
         self.extractor = pretrained_model.features
         self.classifier = nn.Linear(pretrained_model.classifier.in_features, 2)
 

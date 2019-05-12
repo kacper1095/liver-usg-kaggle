@@ -24,17 +24,16 @@ def get_train_valid_transformers():
             mode=["reflect", "symmetric"]
         ),
         iaa.ElasticTransformation(
-            alpha=(0.5, 4.5),
-            sigma=1,
+            alpha=(10, 30),
+            sigma=6,
             mode="wrap"
         )
     ], random_order=True)
 
     transforms = Compose([
-        Denoising(denoising_scale=7),
+        # Denoising(denoising_scale=7),
         ImgaugWrapper(train_augmenters),
-        ToBGR(),
-        ToPILImage(),
+        ToPILImage(mode="L"),
         RandomCrop(128, pad_if_needed=True),
         Resize(128, interpolation=Image.LANCZOS),
         ToTensor()
@@ -44,8 +43,10 @@ def get_train_valid_transformers():
 
 def get_test_transformers():
     return Compose([
-        Denoising(denoising_scale=7),
-        ToBGR(),
+        # Denoising(denoising_scale=7),
+        ToPILImage(mode="L"),
+        RandomCrop(128, pad_if_needed=True),
+        Resize(128, interpolation=Image.LANCZOS),
         ToTensor()
     ])
 

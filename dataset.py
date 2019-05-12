@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple, Union
 
+import imutils
 import cv2
 import imgaug.augmenters as iaa
 import numpy as np
@@ -75,13 +76,21 @@ class UsgDataset(Dataset):
 
     def __getitem__(self, index):
         a_path = self.paths[index]
-        img = cv2.imread(a_path.as_posix(), cv2.IMREAD_GRAYSCALE)
+        names = ["lower.png", "radial_polar_area.png", "circle.png"]
+        stack = []
+        for name in names:
+            img = cv2.imread((a_path / name).as_posix(), cv2.IMREAD_GRAYSCALE)
+            if name in ["lower.png", "circle.png"]:
+                img = imutils.resize(img, height=128, inter=cv2.INTER_LANCZOS4)
 
-        if self.transforms is not None:
-            img = self.transforms(img)
+            if self.transforms is not None:
+                img = self.transforms(img)
 
+            stack.append(img)
+
+        img = np.concatenate(stack, axis=0)
         if self.is_train_or_valid:
-            a_class = int(a_path.parent.parent.name)
+            a_class = int(a_path.parent.name)
             return img, a_class
 
         return img, -1
