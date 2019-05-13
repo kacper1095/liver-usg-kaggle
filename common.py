@@ -10,12 +10,13 @@ from sklearn.metrics import f1_score
 from sklearn.model_selection import train_test_split
 from skorch.net import NeuralNet
 from torch.utils.data import Dataset
-from torchvision.transforms import Compose, RandomCrop, Resize, ToPILImage, ToTensor
+from torchvision.transforms import Compose, FiveCrop, Lambda, RandomCrop, Resize, \
+    ToPILImage, ToTensor
 
-from dataset import Denoising, ImgaugWrapper, ToBGR
+from dataset import ImgaugWrapper
 
 
-def get_train_valid_transformers():
+def get_train_transformers():
     train_augmenters = iaa.Sequential([
         iaa.Fliplr(p=0.2),
         iaa.Affine(
@@ -42,12 +43,17 @@ def get_train_valid_transformers():
 
 
 def get_test_transformers():
+    for_the_crop = Compose([
+        Resize(128, interpolation=Image.LANCZOS),
+        ToTensor()
+    ])
     return Compose([
         # Denoising(denoising_scale=7),
         ToPILImage(mode="L"),
-        RandomCrop(128, pad_if_needed=True),
-        Resize(128, interpolation=Image.LANCZOS),
-        ToTensor()
+        FiveCrop(128),
+        Lambda(lambda crops: torch.stack(tuple([
+            for_the_crop(crop) for crop in crops
+        ])))
     ])
 
 

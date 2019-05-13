@@ -1,14 +1,17 @@
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple, Union
 
-import imutils
 import cv2
 import imgaug.augmenters as iaa
+import imutils
 import numpy as np
 from scipy.ndimage.filters import gaussian_filter
 from scipy.ndimage.interpolation import map_coordinates
 from skimage import exposure
 from torch.utils.data import Dataset
+
+UP_CUT, BOTTOM_CUT = 10, 10
+LEFT_CUT, RIGHT_CUT = 250, 250
 
 
 class NormalizeHist:
@@ -69,10 +72,12 @@ class UsgDataset(Dataset):
     def __init__(self,
                  paths: Union[List[Path], Tuple[Path]],
                  is_train_or_valid: bool,
+                 has_crops: bool,
                  transforms: Optional[Callable] = None):
         self.paths = paths
         self.is_train_or_valid = is_train_or_valid
         self.transforms = transforms
+        self.has_crops = has_crops
 
     def __getitem__(self, index):
         a_path = self.paths[index]
@@ -80,15 +85,33 @@ class UsgDataset(Dataset):
         stack = []
         for name in names:
             img = cv2.imread((a_path / name).as_posix(), cv2.IMREAD_GRAYSCALE)
-            if name in ["lower.png", "circle.png"]:
-                img = imutils.resize(img, height=128, inter=cv2.INTER_LANCZOS4)
+            if name == "lower.png":
+                img = img[
+                      UP_CUT:img.shape[0] - BOTTOM_CUT,
+                      LEFT_CUT:img.shape[1] - RIGHT_CUT
+                      ]
+
+            if name == "lower.png":
+                img = imutils.resize(img, height=144, inter=cv2.INTER_LANCZOS4)
+
+            if name == "circle.png":
+                img = imutils.resize(img, height=144, width=144, inter=cv2.INTER_LANCZOS4)
+
+            if name == "radial_polar_area.png":
+                if img.shape[0] < img.shape[1] and img.shape[0] < 144:
+                    img = imutils.resize(img, height=144, inter=cv2.INTER_LANCZOS4)
+                elif img.shape[0] >= img.shape[1] and img.shape[1] < 144:
+                    img = imutils.resize(img, width=144, inter=cv2.INTER_LANCZOS4)
 
             if self.transforms is not None:
                 img = self.transforms(img)
 
             stack.append(img)
 
-        img = np.concatenate(stack, axis=0)
+        if self.has_crops:
+            img = np.concatenate(stack, axis=1)
+        else:
+            img = np.concatenate(stack, axis=0)
         if self.is_train_or_valid:
             a_class = int(a_path.parent.name)
             return img, a_class

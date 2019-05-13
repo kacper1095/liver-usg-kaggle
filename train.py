@@ -1,4 +1,5 @@
 import argparse
+from itertools import chain
 from pathlib import Path
 
 import numpy as np
@@ -7,13 +8,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from skorch import NeuralNet
-from skorch.callbacks import BatchScoring, Checkpoint, EpochScoring, ProgressBar, LRScheduler
+from skorch.callbacks import BatchScoring, Checkpoint, EpochScoring, LRScheduler, \
+    ProgressBar
 from skorch.helper import predefined_split
-from itertools import chain
 
 from common import acc, fscore, fscore_as_metric, get_test_transformers, get_timestamp, \
     get_train_test_split_from_paths, \
-    get_train_valid_transformers
+    get_train_transformers
 from dataset import UsgDataset
 from model import PretrainedModel
 
@@ -40,9 +41,11 @@ def train(data_folder: str, out_model: str):
     train_paths, valid_paths = get_train_test_split_from_paths(data_paths, classes)
 
     train_dataset = UsgDataset(train_paths, True,
-                               transforms=get_train_valid_transformers())
+                               transforms=get_train_transformers(),
+                               has_crops=False)
     valid_dataset = UsgDataset(valid_paths, True,
-                               transforms=get_train_valid_transformers())
+                               transforms=get_test_transformers(),
+                               has_crops=True)
     net = NeuralNet(
         PretrainedModel,
         criterion=nn.CrossEntropyLoss,
@@ -93,11 +96,13 @@ def train(data_folder: str, out_model: str):
     net.load_params(f_params=(out_model / "params.pt").as_posix())
 
     test_data_paths = list(
-            (Path(data_folder) / "test").glob("*")
+        (Path(data_folder) / "test").glob("*")
     )
     test_dataset = UsgDataset(
         test_data_paths, is_train_or_valid=False,
-        transforms=get_test_transformers())
+        transforms=get_test_transformers(),
+        has_crops=True
+    )
 
     valid_predictions = net.predict(valid_dataset)
     valid_trues = np.asarray([int(path.parent.name) for path in valid_paths])
