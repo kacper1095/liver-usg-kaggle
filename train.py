@@ -3,10 +3,13 @@ from itertools import chain
 from pathlib import Path
 
 import numpy as np
+import multiprocessing as mp
 import pandas as pd
 import torch
+import torch.optim as optim
 import torch.nn as nn
 import torch.optim as optim
+import optimisers
 from skorch import NeuralNet
 from skorch.callbacks import BatchScoring, Checkpoint, EpochScoring, LRScheduler, \
     ProgressBar
@@ -53,6 +56,7 @@ def train(data_folder: str, out_model: str):
         max_epochs=100,
         optimizer=optim.Adam,
         lr=0.0001,
+        # optimizer__weight_decay=5e-6,
         iterator_train__shuffle=True,
         iterator_train__num_workers=4,
         iterator_valid__shuffle=False,
@@ -74,8 +78,8 @@ def train(data_folder: str, out_model: str):
             LRScheduler(
                 policy="ReduceLROnPlateau",
                 monitor="valid_loss",
-                factor=0.1,
-                patience=12,
+                factor=0.91,
+                patience=3,
             ),
         ],
         warm_start=True
@@ -89,7 +93,7 @@ def train(data_folder: str, out_model: str):
         criterion=nn.CrossEntropyLoss,
         iterator_valid__shuffle=False,
         iterator_valid__num_workers=4,
-        iterator_valid__batch_size=1,
+        iterator_valid__batch_size=batch_size,
         device="cuda",
     )
     net.initialize()

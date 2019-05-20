@@ -13,7 +13,7 @@ from torch.utils.data import Dataset
 from torchvision.transforms import Compose, FiveCrop, Lambda, RandomCrop, Resize, \
     ToPILImage, ToTensor
 
-from dataset import ImgaugWrapper
+from dataset import Denoising, ImgaugWrapper
 
 
 def get_train_transformers():
@@ -32,7 +32,7 @@ def get_train_transformers():
     ], random_order=True)
 
     transforms = Compose([
-        # Denoising(denoising_scale=7),
+        Denoising(denoising_scale=7),
         ImgaugWrapper(train_augmenters),
         ToPILImage(mode="L"),
         RandomCrop(128, pad_if_needed=True),
@@ -48,7 +48,7 @@ def get_test_transformers():
         ToTensor()
     ])
     return Compose([
-        # Denoising(denoising_scale=7),
+        Denoising(denoising_scale=7),
         ToPILImage(mode="L"),
         FiveCrop(128),
         Lambda(lambda crops: torch.stack(tuple([
