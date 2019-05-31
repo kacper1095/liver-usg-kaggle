@@ -51,16 +51,19 @@ def generate_embeddings(data_folder: str, weights_path: str, output_path: str):
     net.load_params(f_params=weights_path.as_posix())
 
     print("Saving train embeddings ...")
-    save_data_to_path(get_prediction_with_ids(train_paths, net), output_path / "train.pkl")
+    save_data_to_path(get_prediction_with_paths(train_paths, net),
+                      output_path / "train.pkl")
 
     print("Saving valid embeddings ...")
-    save_data_to_path(get_prediction_with_ids(valid_paths, net), output_path / "valid.pkl")
+    save_data_to_path(get_prediction_with_paths(valid_paths, net),
+                      output_path / "valid.pkl")
 
     print("Saving test embeddings ...")
-    save_data_to_path(get_prediction_with_ids(test_paths, net), output_path / "test.pkl")
+    save_data_to_path(get_prediction_with_paths(test_paths, net),
+                      output_path / "test.pkl")
 
 
-def get_prediction_with_ids(
+def get_prediction_with_paths(
         paths: Union[List[Path], Tuple[Path]],
         net: NeuralNet,
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -71,10 +74,10 @@ def get_prediction_with_ids(
     )
     predictions = list(net.forward(dataset))
     predictions[0] = F.softmax(predictions[0], dim=-1)  # classes predictions
-    predictions = torch.cat(predictions, dim=-1).detach().cpu().numpy()
-    ids = np.asarray([int(path.name) for path in paths])
+    predictions = torch.cat(tuple(predictions), dim=-1).detach().cpu().numpy()
+    paths = np.asarray([path.as_posix() for path in paths])
 
-    return ids, predictions
+    return paths, predictions
 
 
 def save_data_to_path(data: Any, path: Path):
